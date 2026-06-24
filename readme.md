@@ -61,7 +61,7 @@ Processing 100K text embeddings live on a CPU during inference is not feasible. 
 *   **Progress**:
     *   [x] **Python 3.13 Virtual Environment**: Created successfully under `env/`.
     *   [x] **Core Libraries**: `onnxruntime`, `optimum`, `lightgbm`, and `numpy` are installed.
-    *   [ ] **pyTLEX**: Pending setup and configuration.
+    *   [x] **pyTLEX**: installed.
 
 ### 2. Embedding Generation
 *   **Task**: Pass all 100,000 candidate profiles through a binarization-optimized bi-encoder (e.g., `nomic-embed-text-v1.5`).
