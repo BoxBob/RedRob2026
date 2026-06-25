@@ -1,4 +1,5 @@
 PS
 env
-data/raw
+data
 fiu_pytlex
+.pycache
