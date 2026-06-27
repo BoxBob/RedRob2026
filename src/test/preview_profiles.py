@@ -7,6 +7,8 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 # Resolve absolute path to workspace root (three levels up from src/test/preview_profiles.py)
 workspace_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ["PYTHONPYCACHEPREFIX"] = os.path.join(workspace_root, ".pycache")
+sys.path.insert(0, workspace_root)
 
 try:
     import colorama

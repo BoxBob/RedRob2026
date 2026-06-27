@@ -10,20 +10,65 @@ This repository contains the code and resources for the Intelligent Candidate Di
 Redrob_AIML_Challenge/
 ├── PS/
 │   └── India_runs_data_and_ai_challenge/  # Challenge materials (data, schemas, validation)
-│       ├── README.docx                   # Participant bundle overview
-│       ├── candidate_schema.json         # JSON schema describing candidates dataset
-│       ├── candidates.jsonl              # 100,000-candidate pool dataset (or candidates.jsonl.gz)
-│       ├── job_description.docx          # Target Job Description details
-│       ├── redrob_signals_doc.docx       # Reference for the 23 behavioral/trap signals
-│       ├── sample_candidates.json        # Reference schema subset (first 50 candidates)
-│       ├── sample_submission.csv         # Submission format template
-│       ├── submission_metadata_template.yaml # Metadata details to supply with submission
-│       ├── submission_spec.docx          # Rules, constraints, and evaluation pipeline details
-│       └── validate_submission.py        # Local submission validation script
-├── env/                                  # Python 3.13 Virtual Environment (ignored)
-├── .gitignore                            # Ignored paths (PS, env)
-├── requirement.txt                       # Core dependencies list
-└── readme.md                             # Project documentation (this file)
+│       ├── README.docx
+│       ├── candidate_schema.json
+│       ├── candidates.jsonl               # 100,000-candidate pool (source)
+│       ├── job_description.docx
+│       ├── redrob_signals_doc.docx
+│       ├── sample_candidates.json
+│       ├── sample_submission.csv
+│       ├── submission_metadata_template.yaml
+│       ├── submission_spec.docx
+│       └── validate_submission.py
+│
+├── data/                                  # Pipeline data (gitignored)
+│   ├── raw/                               # Ingested copies of candidates + JD
+│   │   ├── candidates.jsonl
+│   │   └── job_description.docx
+│   └── processed/                         # Offline-generated artifacts
+│       ├── candidate_embeddings_float32.npy   # (146.5 MB) 384-dim float32
+│       ├── candidate_embeddings_768.dat       # (293.0 MB) 768-dim float32
+│       ├── candidate_index_binary.dat         # (9.2 MB) packed uint8 binary
+│       ├── candidate_index.json               # (1.5 MB) candidate ID list
+│       ├── categorical_index.json             # (12.9 MB) field → value → row IDs
+│       ├── inverted_index.pkl                 # pickle mirror of categorical index
+│       ├── leace_concept_directions.npy       # concept embedding matrix
+│       ├── leace_projection_matrix.npy        # combined projection P
+│       ├── leace_matrices.npz                 # per-concept LEACE matrices
+│       └── leace_config.json                  # concept metadata
+│
+├── src/
+│   ├── config.py                          # Central configuration (single source of truth)
+│   ├── preprocessing/                     # Offline phase modules
+│   │   ├── GLiNER_setup.py                # GLiNER ONNX session init (singleton)
+│   │   ├── categorical_indexer.py         # Inverted index builder (11 fields)
+│   │   ├── embedder.py                    # BGE embedding + binarization
+│   │   ├── installing_pytlex.py           # pyTLEX dependency setup
+│   │   ├── leace_switch.py                # LEACE concept erasure matrices
+│   │   └── loading_raw_data.py            # Raw data ingestion
+│   ├── live/                              # Live phase modules
+│   │   ├── hamming_kernel.py              # Numba SIMD Hamming scan + bitmask
+│   │   └── stage1_recall.py               # Full Stage 1 pipeline (parse → mask → encode → scan → rank)
+│   └── test/
+│       └── preview_profiles.py            # Candidate profile viewer
+│
+├── scripts/
+│   ├── offline.py                         # Master offline pipeline (ingest → encode → index → LEACE)
+│   └── evaluate_stage1.py                 # Stage 1 evaluation harness
+│
+├── findings/                              # Experiment logs & research notes
+│   ├── findings.md                        # Master findings document (v1.01 → v1.03)
+│   ├── v1.01.md                           # Experiment v1.01 detailed log
+│   ├── v1.02.md                           # Experiment v1.02 detailed log
+│   ├── v.1.03.md                          # Experiment v1.03 detailed log
+│   └── Best_Profiles_found.md             # Top candidate tracking
+│
+├── env/                                   # Python virtual environment (gitignored)
+├── .hf_cache/                             # HuggingFace model cache (gitignored)
+├── .pycache/                              # Centralized __pycache__ (gitignored)
+├── .gitignore
+├── requirements.txt                       # Core dependencies
+└── readme.md                              # Project documentation (this file)
 ```
 
 ---
