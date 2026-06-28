@@ -175,3 +175,79 @@ We are replacing GLiNER with a **local quantized LLM** (`Phi-4-mini Q4_K_M`, ~2.
 - 🧠 Implicit reasoning will eliminate Mechanical Engineers / Customer Support from the top results
 - 🎯 Hard exclusions will remain precise (same bitmask, better upstream parser)
 - ⏱️ Parse time may increase from ~6s to ~10-15s, but well within the 5-minute pipeline SLA
+
+---
+
+## 🔍 Experiment v1.04: LLM Parser + Static LEACE (2-Step Pivot)
+
+To fix the vector destruction caused by dynamic LEACE in our initial tests, we implemented a 2-step pivot:
+1. **Restricted LLM Output**: The LLM was restricted to selecting from a predefined list of 5 atomic concepts (`['academia', 'consulting', 'junior', 'management', 'non-technical']`) that were precomputed completely offline.
+2. **Global Projection Matrix**: We fixed a mathematical bug where applying `M = I - v^T v` on the raw BGE-Small vector destroyed the embedding space (due to vector anisotropy). We applied the correct global projection matrix `P` which properly centered the subspace.
+
+### 📈 Disk & Performance Metrics
+*   🤖 **LLM Parsing Time**: **~142 seconds** (Running onnxruntime-genai on CPU for a long JD)
+*   🛡️ **Bitmasking Time**: **13.6ms** (Excluded 22,607 candidates from banned companies Infosys, TCS, Wipro)
+*   🚀 **Stage 1 Recall Retrieval (Top 2000)**: **~5ms** (Hamming scan remains incredibly fast)
+
+### 📝 Experiment Conclusion
+
+> [!CAUTION]
+> Despite the mathematically sound application of LEACE and successful bitmasking of companies, the final candidate list was still highly irrelevant.
+> 
+> Because the synthetic dataset randomly generated AI skills for unrelated roles (e.g., HR Managers with 'Vector Search' or Sales Executives with 'RAG'), the BGE-Small vector search strongly retrieved them based on skill matching, completely ignoring their titles. 
+> LEACE mathematically pushed away "academia" and "junior", but it fundamentally cannot prevent a "Mechanical Engineer" from being retrieved if their generated skills align with the prompt.
+
+---
+
+### 💡 Takeaways
+
+1. ❌ **LEACE is the wrong tool for categorical parsing.** Job Descriptions contain categorical constraints ("We don't want HR managers"), but vector spaces are soft. If an HR manager has strong AI skills, the vector search will retrieve them regardless of how much we geometrically repel "non-technical" concepts.
+2. 🛡️ **Bitmasking is the only reliable way to enforce JD constraints.** The bitmask successfully eliminated 22,000 candidates from banned companies instantly. We need to expand this mechanism.
+
+---
+
+### 🚀 Future Steps
+
+*   **Pivot to LLM-Driven Boolean Bitmasking**: Abandon LEACE completely. Instruct the LLM to deduce *hard categorical exclusions* (Titles, Industries) based on the JD's requirements, and feed those directly into the bitmask to physically block irrelevant roles before vector ranking.
+
+---
+
+## 🔍 Experiment v1.05: Multi-Vector HyDE + Categorical Bitmasking
+
+We completely replaced the LEACE geometric repulsion approach with a combination of offline Categorical Bitmasking and Multi-Vector (HyDE) semantic search.
+
+1. **Title-Category Bitmasking**: We built an offline script to map candidate job titles into functional buckets (e.g., `HR/People`, `Sales/BD`, `Mechanical/Mfg`). The LLM reads the JD and explicitly excludes entire categories. These candidates are instantly dropped using a bitmask before vector search even happens.
+2. **Multi-Vector HyDE Decomposition**: The LLM generates a 150-word ideal candidate resume (HyDE) and extracts three sub-queries (`skills`, `role`, `domain`).
+3. **Multi-Vector Hamming Scan**: We run the fast binary Hamming search on all four queries separately, union the candidates, and score them by their single best rank across all queries.
+
+### 📈 Disk & Performance Metrics
+*   🤖 **LLM Parsing Time**: **~62 seconds** (Running onnxruntime-genai on CPU for a long JD)
+*   🛡️ **Bitmasking Time**: **15.2ms**
+*   🚀 **Stage 1 Multi-Vector Search (Top 10)**: **~216ms** (Executing 4 Hamming kernels over 100k candidates)
+
+### 📝 Experiment Conclusion
+
+> [!TIP]
+> The top 10 results are now completely clean of the contamination we saw in previous runs. We successfully retrieved **AI Specialists**, **Search Engineers**, and **Machine Learning Engineers** who built actual recommendation systems or semantic search features.
+>
+> The Title-Category bitmask successfully eradicated the "HR Managers" and "Mechanical Engineers", allowing the multi-vector semantic scan (HyDE) to cleanly retrieve relevant profiles.
+
+---
+
+### 💡 Takeaways
+
+1. 🎯 **Hard Categorical Exclusions via Bitmasking work flawlessly.** When we allow the LLM to output broad buckets (e.g., `HR/People`, `Mechanical/Mfg`) and apply them strictly via bitwise AND, we eliminate 100% of title-based contamination. 
+2. 🚀 **Multi-Vector HyDE search increases relevant recall.** By searching across the ideal resume, domain, role, and skills separately and taking the best rank, we avoid vector dilution.
+
+---
+
+### 🏁 Final Architecture Decision
+The v1.05 pipeline (LLM Parser -> Categorical + Company Bitmask -> Multi-Vector Hamming Search) is our **true architectural intent** for Stage 1. We will proceed with this implementation.
+
+## 🔍 Experiment v1.06: Final Validation
+
+We ran the live pipeline with the newly built category_index.pkl and multi-vector HyDE decomposition. 
+The top 10 results are completely clean of the contamination we saw in previous runs. We successfully retrieved **AI Specialists**, **Search Engineers**, and **Machine Learning Engineers** who built actual recommendation systems or semantic search features.
+
+The Title-Category bitmask successfully eradicated the non-technical roles, allowing the multi-vector semantic scan to cleanly retrieve relevant profiles.
+(See 1.06.md for the full top 10 profiles).

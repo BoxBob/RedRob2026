@@ -52,33 +52,21 @@ NOTICE_PERIOD_BUCKETS = [
 # LEACE-Switch — Negative Concept Erasure
 # ─────────────────────────────────────────────────────────────────────────────
 LEACE_NEGATIVE_CONCEPTS = [
-    "Junior Developer",
-    "Intern",
-    "Entry Level",
-    "Consulting",
-    "Staffing Agency",
+    "academia",
+    "consulting",
+    "junior",
+    "management",
+    "non-technical"
 ]
 LEACE_RANK = 2  # Number of concept directions to erase (top-k SVD components)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Live Phase — GLiNER Dynamic Parsing
+# Live Phase — LLM JD Parsing (onnxruntime-genai)
 # ─────────────────────────────────────────────────────────────────────────────
-GLINER_MODEL = "onnx-community/gliner_small-v2.1"
-GLINER_LABELS = [
-    # --- The "Good" Labels (Give the model a place to put positive matches) ---
-    "hiring company", 
-    "preferred company", 
-    "target job title", 
-    
-    # --- The "Bad" Labels (The ones you actually want to extract) ---
-    "company the candidate must not have worked for",
-    "disqualified skill or unwanted experience",
-    
-    # --- The Requirements ---
-    "mandatory job location",
-    "mandatory technical skill"
-]
-GLINER_CONFIDENCE_THRESHOLD = 0.7
+LLM_MODEL_REPO = "microsoft/Phi-4-mini-instruct-onnx"
+LLM_MODEL_FOLDER = "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4"
+LLM_TEMPERATURE = 0.0
+LLM_MAX_TOKENS = 4096
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Live Phase — Hamming Search
@@ -103,9 +91,4 @@ OUT_INDEX_JSON       = os.path.join(WORKSPACE_ROOT, "data", "processed", "candid
 # Processed outputs — Categorical Index
 OUT_CATEGORICAL_JSON = os.path.join(WORKSPACE_ROOT, "data", "processed", "categorical_index.json")
 OUT_INVERTED_INDEX_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "inverted_index.pkl")
-
-# Processed outputs — LEACE
-OUT_LEACE_DIRECTIONS = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_concept_directions.npy")
-OUT_LEACE_PROJECTION = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_projection_matrix.npy")
-OUT_LEACE_MATRICES_NPZ = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_matrices.npz")
-OUT_LEACE_CONFIG     = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_config.json")
+OUT_CATEGORY_INDEX_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "category_index.pkl")

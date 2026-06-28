@@ -11,3 +11,5 @@ pandas
 einops
 numba
 gliner
+llama-cpp-python
+huggingface_hub

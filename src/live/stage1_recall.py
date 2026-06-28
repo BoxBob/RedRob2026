@@ -32,9 +32,8 @@ import gc
 from src.config import (
     EMBEDDING_MODEL, EMBEDDING_DIM, BINARY_DIM, PACKED_DIM,
     QUERY_PREFIX, NUM_CANDIDATES, TOP_K,
-    GLINER_LABELS, GLINER_CONFIDENCE_THRESHOLD,
     OUT_BINARY_DAT, OUT_INDEX_JSON, OUT_INVERTED_INDEX_PKL,
-    OUT_LEACE_MATRICES_NPZ, OUT_LEACE_CONFIG, RAW_JD,
+    OUT_CATEGORY_INDEX_PKL, RAW_JD,
 )
 from src.live.hamming_kernel import (
     hamming_scan_masked, build_mask_packed, get_popcount_lut,
@@ -66,8 +65,7 @@ class Stage1Retriever:
         binary_dat_path=None,
         index_path=None,
         inverted_index_path=None,
-        leace_matrices_path=None,
-        use_gliner=True,
+        use_llm=True,
         use_leace=True,
     ):
         print("=" * 60)
@@ -78,7 +76,7 @@ class Stage1Retriever:
         binary_dat_path     = binary_dat_path     or OUT_BINARY_DAT
         index_path          = index_path          or OUT_INDEX_JSON
         inverted_index_path = inverted_index_path or OUT_INVERTED_INDEX_PKL
-        leace_matrices_path = leace_matrices_path or OUT_LEACE_MATRICES_NPZ
+        category_index_path = OUT_CATEGORY_INDEX_PKL
 
         # 1. Load candidate ID index
         t0 = time.time()
@@ -107,27 +105,26 @@ class Stage1Retriever:
             self.inverted_index = {}
             print(f"  [IIDX]   ⚠ Not found: {inverted_index_path}")
 
-        # 4. Load per-concept LEACE matrices (.npz)
-        self.leace_matrices = {}
-        if use_leace and os.path.exists(leace_matrices_path):
+        # 4. Load Category Index
+        self.category_index = {}
+        if os.path.exists(category_index_path):
             t0 = time.time()
-            npz = np.load(leace_matrices_path)
-            for storage_key in npz.files:
-                # Convert storage key (underscores) back to concept key (spaces)
-                concept_key = storage_key.replace("_", " ")
-                self.leace_matrices[concept_key] = npz[storage_key]
-            print(f"  [LEACE]  {len(self.leace_matrices)} concept matrices loaded ({(time.time()-t0)*1000:.0f}ms)")
-        elif use_leace:
-            print(f"  [LEACE]  ⚠ Not found: {leace_matrices_path}")
+            try:
+                with open(category_index_path, 'rb') as f:
+                    self.category_index = pickle.load(f)
+                print(f"  [CAT]    Category index loaded ({(time.time()-t0)*1000:.0f}ms)")
+            except Exception as e:
+                print(f"  [CAT]    ⚠ Failed to load: {e}")
+        else:
+            print(f"  [CAT]    ⚠ Not found: {category_index_path}")
 
         # 5. Load the bi-encoder model
         t0 = time.time()
         self.model = SentenceTransformer(EMBEDDING_MODEL)
         print(f"  [MODEL]  {EMBEDDING_MODEL} loaded ({(time.time()-t0)*1000:.0f}ms)")
 
-        # 6. Initialize GLiNER (lazy — loaded on first use)
-        self.use_gliner = use_gliner
-        self.gliner = None
+        # 6. Initialize LLM (lazy — loaded on first use)
+        self.use_llm = use_llm
 
         # 7. Precompute popcount LUT
         self.popcount_lut = get_popcount_lut()
@@ -138,68 +135,35 @@ class Stage1Retriever:
         print("=" * 60)
 
     # ─────────────────────────────────────────────────────────────
-    # [PARSE] GLiNER Dynamic JD Parsing
+    # [PARSE] LLM Dynamic JD Parsing
     # ─────────────────────────────────────────────────────────────
     def _parse_jd(self, jd_text):
         """
-        Extract hard categorical exclusions and semantic negations from JD text.
+        Extract hard categorical exclusions and soft repulsions from JD text using the LLM.
 
         Returns:
             dict with keys:
                 'excluded_companies': list[str]
-                'excluded_industries': list[str]
-                'excluded_titles': list[str]
-                'required_locations': list[str]
-                'required_skills': list[str]
                 'negative_concepts': list[str]  — for LEACE matching
         """
-        if not self.use_gliner:
+        if not self.use_llm:
             return {
-                'excluded_companies': [], 'excluded_industries': [],
-                'excluded_titles': [], 'required_locations': [],
-                'required_skills': [], 'negative_concepts': [],
+                'excluded_companies': [],
+                'excluded_title_categories': [],
+                'hyde_resume': "",
+                'sub_queries': {}
             }
 
-        # Lazy-init GLiNER
-        if self.gliner is None:
-            from src.preprocessing.GLiNER_setup import initialize_gliner_session
-            self.gliner = initialize_gliner_session()
-
-        # Split by newline to avoid BERT 512-token truncation
-        chunks = [c.strip() for c in jd_text.split('\n') if c.strip()]
-        entities = []
-        for chunk in chunks:
-            chunk_entities = self.gliner.predict_entities(
-                chunk, GLINER_LABELS, threshold=GLINER_CONFIDENCE_THRESHOLD
-            )
-            entities.extend(chunk_entities)
-
+        from src.live.jd_parser import parse_jd
+        
+        parsed_data = parse_jd(jd_text)
+        
         parsed = {
-            'excluded_companies': [],
-            'excluded_industries': [],
-            'excluded_titles': [],
-            'required_locations': [],
-            'required_skills': [],
-            'negative_concepts': [],
+            'excluded_companies': parsed_data.get('hard_exclusions', {}).get('strictly_excluded_companies', []),
+            'excluded_title_categories': parsed_data.get('excluded_title_categories', []),
+            'hyde_resume': parsed_data.get('hyde_resume', ""),
+            'sub_queries': parsed_data.get('sub_queries', {})
         }
-
-        for ent in entities:
-            label = ent['label']
-            text = ent['text'].strip().lower()
-            score = ent['score']
-
-            # We safely ignore the "Good" contrastive labels (they are just buckets to prevent false positives)
-            if label in ("hiring company", "preferred company", "target job title"):
-                continue
-                
-            if label == "company the candidate must not have worked for":
-                parsed['excluded_companies'].append(text)
-            elif label == "mandatory job location":
-                parsed['required_locations'].append(text)
-            elif label == "mandatory technical skill":
-                parsed['required_skills'].append(text)
-            elif label == "disqualified skill or unwanted experience":
-                parsed['negative_concepts'].append(text)
 
         return parsed
 
@@ -208,43 +172,26 @@ class Stage1Retriever:
     # ─────────────────────────────────────────────────────────────
     def _build_bitmask(self, exclusions):
         """
-        Build a boolean eligibility mask from categorical exclusions.
-
-        Looks up exclusions in the inverted index and marks matching
-        candidates as ineligible.
-
-        Args:
-            exclusions: dict from _parse_jd()
-
-        Returns:
-            eligible_mask: (N,) bool — True = eligible
-            mask_packed: (ceil(N/32),) uint32 — packed for kernel
+        Build a boolean eligibility mask combining companies and title categories.
         """
         eligible = np.ones(self.num_candidates, dtype=bool)
 
-        if not self.inverted_index:
-            return eligible, build_mask_packed(eligible, self.num_candidates)
-
-        # Map exclusion types to inverted index field names
-        exclusion_map = {
-            'excluded_companies': 'current_company',
-            'excluded_industries': 'current_industry',
-            'excluded_titles': 'current_title',
-        }
-
-        # For each excluded company, look for candidates at that company
-        for exc_type, field_name in exclusion_map.items():
-            if field_name not in self.inverted_index:
-                continue
-            field_index = self.inverted_index[field_name]
-            for value in exclusions.get(exc_type, []):
-                # Case-insensitive match
-                value_lower = value.lower().strip()
+        # 1. Company Exclusions (from inverted index)
+        if self.inverted_index and 'current_company' in self.inverted_index:
+            field_index = self.inverted_index['current_company']
+            for company in exclusions.get('excluded_companies', []):
+                company_lower = company.lower().strip()
                 for idx_key, row_indices in field_index.items():
-                    if value_lower in idx_key.lower():
+                    if company_lower in idx_key.lower():
                         for idx in row_indices:
                             if idx < self.num_candidates:
                                 eligible[idx] = False
+
+        # 2. Title Category Exclusions (from category index)
+        for cat in exclusions.get('excluded_title_categories', []):
+            if cat in self.category_index:
+                indices = self.category_index[cat]
+                eligible[indices] = False
 
         mask_packed = build_mask_packed(eligible, self.num_candidates)
         num_excluded = int(np.sum(~eligible))
@@ -253,55 +200,24 @@ class Stage1Retriever:
     # ─────────────────────────────────────────────────────────────
     # [ENCODE] Query Encoding + LEACE Repulsion + Binarization
     # ─────────────────────────────────────────────────────────────
-    def _encode_and_binarize(self, jd_text, negations):
-        """
-        Encode JD → 384-dim → duplicate → 768-dim → LEACE repulsion → binarize.
-
-        Args:
-            jd_text: raw JD text
-            negations: list of negative concept strings from GLiNER
-
-        Returns:
-            query_binary: (96,) uint8 — bit-packed query vector
-        """
-        # BGE encode with query prefix
-        prefixed = QUERY_PREFIX + jd_text
+    def _encode_and_binarize(self, text):
+        """Encode arbitrary text to a 96-byte packed binary vector."""
+        if not text:
+            # Return zeros if text is empty
+            return np.zeros(96, dtype=np.uint8)
+            
+        prefixed = QUERY_PREFIX + text
         emb_384 = self.model.encode(
             [prefixed], convert_to_numpy=True, show_progress_bar=False
-        )[0]  # (384,)
+        )[0]
 
-        # Unit-normalize
         norm = np.linalg.norm(emb_384)
         if norm > 0:
             emb_384 = emb_384 / norm
 
-        # Duplicate to 768-dim
-        emb_768 = np.concatenate([emb_384, emb_384]).astype(np.float32)  # (768,)
-
-        # Apply per-concept LEACE repulsion
-        if negations and self.leace_matrices:
-            for concept_text in negations:
-                concept_key = concept_text.lower().strip()
-                # Try exact match first, then substring match
-                matched_key = None
-                if concept_key in self.leace_matrices:
-                    matched_key = concept_key
-                else:
-                    for k in self.leace_matrices:
-                        if k in concept_key or concept_key in k:
-                            matched_key = k
-                            break
-
-                if matched_key is not None:
-                    M = self.leace_matrices[matched_key]
-                    emb_768 = (M @ emb_768).astype(np.float32)
-                    print(f"    LEACE applied: '{concept_text}' → matrix '{matched_key}'")
-
-        # Sign threshold → binarize → packbits
-        binary_bits = (emb_768 >= 0).astype(np.uint8)  # (768,)
-        query_binary = np.packbits(binary_bits)          # (96,)
-
-        return query_binary
+        emb_768 = np.concatenate([emb_384, emb_384]).astype(np.float32)
+        binary_bits = (emb_768 >= 0).astype(np.uint8)
+        return np.packbits(binary_bits)
 
     # ─────────────────────────────────────────────────────────────
     # [SEARCH] Full Pipeline
@@ -321,56 +237,99 @@ class Stage1Retriever:
         timings = {}
 
         print(f"\n{'─' * 60}")
-        print(f"  STAGE 1 SEARCH — Top {top_k}")
+        print(f"  STAGE 1 SEARCH — Top {top_k} (Multi-Vector HyDE)")
         print(f"{'─' * 60}")
 
         # ── [PARSE] ──
         t0 = time.time()
         parsed = self._parse_jd(jd_text)
         timings['PARSE'] = (time.time() - t0) * 1000
-        negations = parsed['negative_concepts']
-        print(f"  [PARSE]   {timings['PARSE']:.1f}ms | exclusions: {sum(len(v) for v in parsed.values())} entities")
-        for key, vals in parsed.items():
-            if vals:
-                print(f"            {key}: {vals}")
+        
+        hyde_resume = parsed.get('hyde_resume', "") or jd_text
+        sub_queries = parsed.get('sub_queries', {})
+
+        print(f"  [PARSE]   {timings['PARSE']:.1f}ms | exclusions: {len(parsed.get('excluded_companies', []))} entities")
+        if parsed.get('excluded_companies'):
+            print(f"            excluded_companies: {parsed['excluded_companies']}")
+        if parsed.get('excluded_title_categories'):
+            print(f"            excluded_title_categories: {parsed['excluded_title_categories']}")
 
         # ── [MASK] ──
         t0 = time.time()
-        eligible, mask_packed, num_excluded = self._build_bitmask(parsed)
+        eligible_mask, mask_packed, num_excluded = self._build_bitmask(parsed)
         timings['MASK'] = (time.time() - t0) * 1000
         print(f"  [MASK]    {timings['MASK']:.1f}ms | {num_excluded} candidates excluded, {self.num_candidates - num_excluded} eligible")
 
         # ── [ENCODE] ──
         t0 = time.time()
-        query_binary = self._encode_and_binarize(jd_text, negations)
+        query_binaries = []
+        
+        # Primary vector (HyDE)
+        q_hyde = self._encode_and_binarize(hyde_resume)
+        query_binaries.append(q_hyde)
+        
+        # Sub-vectors
+        for field in ['skills', 'role', 'domain']:
+            val = sub_queries.get(field, "")
+            if val:
+                query_binaries.append(self._encode_and_binarize(val))
+                
         timings['ENCODE'] = (time.time() - t0) * 1000
-        print(f"  [ENCODE]  {timings['ENCODE']:.1f}ms | query shape: {query_binary.shape}")
+        print(f"  [ENCODE]  {timings['ENCODE']:.1f}ms | encoded {len(query_binaries)} vectors")
 
-        # ── [SCAN] ──
+        # ── [SCAN & RANK] ──
         t0 = time.time()
-        distances = hamming_scan_masked(
-            self.candidate_binary,
-            query_binary,
-            mask_packed,
-            self.num_candidates,
-            PACKED_DIM,
-            self.popcount_lut,
-        )
-        timings['SCAN'] = (time.time() - t0) * 1000
-        print(f"  [SCAN]    {timings['SCAN']:.1f}ms | Numba Hamming kernel complete")
+        
+        from collections import defaultdict
+        all_candidate_scores = defaultdict(lambda: float('inf'))
+        
+        scan_time_total = 0
+        for q_bin in query_binaries:
+            t_s = time.time()
+            distances = hamming_scan_masked(
+                self.candidate_binary,
+                q_bin,
+                mask_packed,
+                self.num_candidates,
+                PACKED_DIM,
+                self.popcount_lut,
+            )
+            scan_time_total += (time.time() - t_s)
+            
+            valid_indices = np.where(eligible_mask)[0]
+            if len(valid_indices) == 0:
+                continue
+                
+            valid_distances = distances[valid_indices]
+            
+            k = min(100, len(valid_indices))
+            if k == 0: continue
+                
+            idx_top_k = np.argpartition(valid_distances, k - 1)[:k]
+            idx_top_k = idx_top_k[np.argsort(valid_distances[idx_top_k])]
+            
+            global_indices = valid_indices[idx_top_k]
+            top_distances = valid_distances[idx_top_k]
+            
+            for rank, (g_idx, dist) in enumerate(zip(global_indices, top_distances)):
+                if rank < all_candidate_scores[g_idx]:
+                    all_candidate_scores[g_idx] = rank
+                    
+        timings['SCAN'] = scan_time_total * 1000
+        print(f"  [SCAN]    {timings['SCAN']:.1f}ms | Numba Hamming kernel across {len(query_binaries)} vectors")
 
-        # ── [RANK] ──
         t0 = time.time()
-        actual_top_k = min(top_k, self.num_candidates)
-        if actual_top_k == self.num_candidates:
-            top_indices = np.argsort(distances)
-        else:
-            top_indices_unsorted = np.argpartition(distances, actual_top_k)[:actual_top_k]
-            top_indices = top_indices_unsorted[np.argsort(distances[top_indices_unsorted])]
-
-        top_candidate_ids = [self.candidate_ids[i] for i in top_indices]
+        sorted_candidates = sorted(all_candidate_scores.items(), key=lambda x: x[1])
+        final_top = sorted_candidates[:top_k]
+        
+        results = []
+        for g_idx, best_rank in final_top:
+            cand_id = self.candidate_ids[g_idx]
+            results.append((cand_id, best_rank))
+            
         timings['RANK'] = (time.time() - t0) * 1000
-        print(f"  [RANK]    {timings['RANK']:.1f}ms | top-{actual_top_k} extracted")
+        actual_top_k = len(results)
+        print(f"  [RANK]    {timings['RANK']:.1f}ms | top-{actual_top_k} extracted by best sub-query rank")
 
         # ── Summary ──
         total = sum(timings.values())
@@ -385,7 +344,7 @@ class Stage1Retriever:
         del distances
         gc.collect()
 
-        return top_candidate_ids
+        return [cand_id for cand_id, _ in results]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -409,8 +368,8 @@ if __name__ == "__main__":
         Not from consulting firms. No junior developers.
         """
 
-    # Initialize retriever (GLiNER disabled by default for fast testing)
-    retriever = Stage1Retriever(use_gliner=True, use_leace=True)
+    # Initialize retriever (LLM enabled)
+    retriever = Stage1Retriever(use_llm=True, use_leace=True)
 
     # Warm up Numba (first call triggers compilation)
     print("\n⏳ Warming up Numba kernel (first call compiles)...")
