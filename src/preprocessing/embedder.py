@@ -78,8 +78,10 @@ def process_candidates(
     batch_size       = batch_size       or ENCODE_BATCH_SIZE
 
     # ── Load model ──
-    print(f"  Loading embedding model ({EMBEDDING_MODEL})...")
-    model = SentenceTransformer(EMBEDDING_MODEL)
+    import torch
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f"  Loading embedding model ({EMBEDDING_MODEL}) on {device}...")
+    model = SentenceTransformer(EMBEDDING_MODEL, device=device)
 
     # ── Load candidate data ──
     print(f"  Loading candidate data from {json_filepath}...")

@@ -92,3 +92,14 @@ OUT_INDEX_JSON       = os.path.join(WORKSPACE_ROOT, "data", "processed", "candid
 OUT_CATEGORICAL_JSON = os.path.join(WORKSPACE_ROOT, "data", "processed", "categorical_index.json")
 OUT_INVERTED_INDEX_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "inverted_index.pkl")
 OUT_CATEGORY_INDEX_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "category_index.pkl")
+
+# Processed outputs — LEACE
+OUT_LEACE_DIRECTIONS = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_concept_directions.npy")
+OUT_LEACE_PROJECTION = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_projection_matrix.npy")
+OUT_LEACE_CONFIG     = os.path.join(WORKSPACE_ROOT, "data", "processed", "leace_config.json")
+
+# Processed outputs — Fraud Detection
+OUT_FRAUD_FLAGS_JSON = os.path.join(WORKSPACE_ROOT, "data", "processed", "fraud_flags.json")
+OUT_TFIDF_VECTORIZER_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "tfidf_vectorizer.pkl")
+OUT_TFIDF_MATRIX_NPZ = os.path.join(WORKSPACE_ROOT, "data", "processed", "tfidf_matrix.npz")
+OUT_ANOMALY_MODEL_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "anomaly_model.pkl")

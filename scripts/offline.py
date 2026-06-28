@@ -34,11 +34,15 @@ try:
     import src.preprocessing.loading_raw_data as loading_raw_data
     import src.preprocessing.embedder as embedder
     import src.preprocessing.categorical_indexer as categorical_indexer
-    import src.preprocessing.leace_switch as leace_switch
+    try:
+        import src.preprocessing.leace_switch as leace_switch
+    except ImportError:
+        leace_switch = None
     from src.config import (
         OUT_FLOAT32_NPY, OUT_FLOAT768_DAT, OUT_BINARY_DAT,
         OUT_INDEX_JSON, OUT_CATEGORICAL_JSON,
         OUT_LEACE_DIRECTIONS, OUT_LEACE_PROJECTION, OUT_LEACE_CONFIG,
+        OUT_FRAUD_FLAGS_JSON, OUT_TFIDF_VECTORIZER_PKL, OUT_TFIDF_MATRIX_NPZ, OUT_ANOMALY_MODEL_PKL
     )
 except ImportError as e:
     print(f"Error importing modules: {e}")
@@ -105,13 +109,29 @@ def run_offline_pipeline():
     print(f"└─ [INDEX] Done ({step_times['INDEX']}s) ──────────────────────────────┘")
 
     # ─────────────────────────────────────────────────────────────
+    # [FRAUD] Run honeypot & fraud detection precomputations
+    # ─────────────────────────────────────────────────────────────
+    print("\n┌─ [FRAUD] Running fraud detection precomputations ───────────┐")
+    t0 = time.time()
+    try:
+        import src.preprocessing.fraud_detection as fraud_detection
+        fraud_detection.compute_fraud_features()
+    except Exception as e:
+        print(f"Error running fraud detection: {e}")
+    step_times["FRAUD"] = round(time.time() - t0, 2)
+    print(f"└─ [FRAUD] Done ({step_times['FRAUD']}s) ──────────────────────────────┘")
+
+    # ─────────────────────────────────────────────────────────────
     # [LEACE] Compute concept erasure matrices
     # ─────────────────────────────────────────────────────────────
     print("\n┌─ [LEACE] Computing concept erasure matrices ──────────────┐")
     t0 = time.time()
-    leace_switch.compute_leace_projection()
-    step_times["LEACE"] = round(time.time() - t0, 2)
-    print(f"└─ [LEACE] Done ({step_times['LEACE']}s) ──────────────────────────────┘")
+    if leace_switch is not None:
+        leace_switch.compute_leace_projection()
+        step_times["LEACE"] = round(time.time() - t0, 2)
+        print(f"└─ [LEACE] Done ({step_times['LEACE']}s) ──────────────────────────────┘")
+    else:
+        print("└─ [LEACE] Skipped (leace_switch module not found) ─────────┘")
 
     # ─────────────────────────────────────────────────────────────
     # Summary
@@ -139,6 +159,10 @@ def run_offline_pipeline():
         ("leace_concept_directions.npy",     OUT_LEACE_DIRECTIONS),
         ("leace_projection_matrix.npy",      OUT_LEACE_PROJECTION),
         ("leace_config.json",                OUT_LEACE_CONFIG),
+        ("fraud_flags.json",                 OUT_FRAUD_FLAGS_JSON),
+        ("tfidf_vectorizer.pkl",             OUT_TFIDF_VECTORIZER_PKL),
+        ("tfidf_matrix.npz",                 OUT_TFIDF_MATRIX_NPZ),
+        ("anomaly_model.pkl",                OUT_ANOMALY_MODEL_PKL),
     ]
 
     print("\n  📦  Generated Artifacts:")
