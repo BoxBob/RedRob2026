@@ -13,3 +13,4 @@ numba
 gliner
 llama-cpp-python
 huggingface_hub
+torch
