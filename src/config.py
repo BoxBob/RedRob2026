@@ -65,14 +65,14 @@ LEACE_RANK = 2  # Number of concept directions to erase (top-k SVD components)
 # ─────────────────────────────────────────────────────────────────────────────
 LLM_MODEL_REPO = "microsoft/Phi-4-mini-instruct-onnx"
 LLM_MODEL_FOLDER = "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4"
-LLM_TEMPERATURE = 0.0
+LLM_TEMPERATURE = 0.1
 LLM_MAX_TOKENS = 4096
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Live Phase — Hamming Search
 # ─────────────────────────────────────────────────────────────────────────────
 NUM_CANDIDATES = 100_000
-TOP_K = 2000
+TOP_K = 5000
 HAMMING_STRIDE = 32           # candidates per uint32 bitmask chunk
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -103,3 +103,13 @@ OUT_FRAUD_FLAGS_JSON = os.path.join(WORKSPACE_ROOT, "data", "processed", "fraud_
 OUT_TFIDF_VECTORIZER_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "tfidf_vectorizer.pkl")
 OUT_TFIDF_MATRIX_NPZ = os.path.join(WORKSPACE_ROOT, "data", "processed", "tfidf_matrix.npz")
 OUT_ANOMALY_MODEL_PKL = os.path.join(WORKSPACE_ROOT, "data", "processed", "anomaly_model.pkl")
+
+# Processed outputs — Stage 2 RRF
+OUT_RRF_FEATURES_JSON = os.path.join(WORKSPACE_ROOT, "data", "processed", "rrf_features.json")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Search Parameters
+# ─────────────────────────────────────────────────────────────────────────────
+# How many candidates to recall from binary index in Stage 1
+TOP_K = 5000 
+FINAL_TOP_K = 100

@@ -158,14 +158,10 @@ class Stage1Retriever:
         
         parsed_data = parse_jd(jd_text)
         
-        parsed = {
-            'excluded_companies': parsed_data.get('hard_exclusions', {}).get('strictly_excluded_companies', []),
-            'excluded_title_categories': parsed_data.get('excluded_title_categories', []),
-            'hyde_resume': parsed_data.get('hyde_resume', ""),
-            'sub_queries': parsed_data.get('sub_queries', {})
-        }
-
-        return parsed
+        # Inject excluded_companies at the top level for backwards compatibility
+        parsed_data['excluded_companies'] = parsed_data.get('hard_exclusions', {}).get('strictly_excluded_companies', [])
+        
+        return parsed_data
 
     # ─────────────────────────────────────────────────────────────
     # [MASK] Categorical Bitmask Construction
@@ -231,7 +227,7 @@ class Stage1Retriever:
             top_k: number of candidates to return (default: config.TOP_K)
 
         Returns:
-            list of candidate IDs (strings), ranked by Hamming distance
+            tuple: (list of candidate IDs, dict of parsed JD)
         """
         top_k = top_k or TOP_K
         timings = {}
@@ -302,7 +298,7 @@ class Stage1Retriever:
                 
             valid_distances = distances[valid_indices]
             
-            k = min(100, len(valid_indices))
+            k = min(top_k, len(valid_indices))
             if k == 0: continue
                 
             idx_top_k = np.argpartition(valid_distances, k - 1)[:k]
@@ -344,7 +340,7 @@ class Stage1Retriever:
         del distances
         gc.collect()
 
-        return [cand_id for cand_id, _ in results]
+        return [cand_id for cand_id, _ in results], parsed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -379,6 +375,6 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("  REAL SEARCH RUN (Numba compiled)")
     print("=" * 60)
-    top_results = retriever.search(jd_text, top_k=TOP_K)
+    top_results, parsed = retriever.search(jd_text, top_k=TOP_K)
 
     print(f"\nTop 10 Matches: {top_results[:10]}")
