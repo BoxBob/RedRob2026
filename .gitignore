@@ -1,1 +1,6 @@
 PS
+env
+data
+fiu_pytlex
+.pycache
+.hf_cache

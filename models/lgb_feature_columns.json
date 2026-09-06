@@ -1,0 +1,1 @@
+["total_exp_years", "skill_count", "tenure_std_months", "resume_length_tokens", "avg_description_length", "profile_completeness_score", "github_activity_score", "temporal_penalty", "overlap_days", "inferred_date_ratio", "mimicry_flag", "tfidf_jd_overlap", "total_gap_months", "career_velocity", "jd_skill_match_ratio", "anomaly_score", "hamming_score"]

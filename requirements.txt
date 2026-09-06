@@ -1,0 +1,16 @@
+onnxruntime
+optimum[onnxruntime]
+lightgbm
+numpy
+python-constraint~=1.4.0
+pytest>=3.4.2
+pytest_cov>=2.5.1
+z3-solver>=4.8.12.0
+sentence-transformers
+pandas
+einops
+numba
+gliner
+llama-cpp-python
+huggingface_hub
+torch
